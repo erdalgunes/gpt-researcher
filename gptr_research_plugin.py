@@ -14,6 +14,13 @@ from datetime import datetime
 # Add current directory to path to import existing code
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# Apply GPT-5 patches before importing GPT Researcher
+try:
+    from gptr_gpt5_patch import patch_for_gpt5, monkey_patch_temperature
+    patch_for_gpt5()
+    monkey_patch_temperature()
+except ImportError:
+    pass  # Patch is optional
 
 async def run_research_dry(args: dict, config: dict) -> dict:
     """Dry run - simulates research without API calls"""
@@ -119,6 +126,9 @@ async def run_research(args: dict, config: dict) -> dict:
     if config.get('llm_provider') == 'gpt5':
         os.environ['OPENAI_API_MODEL'] = config.get('llm_model', 'gpt-5')
     
+    # Use Tavily as the default retriever for the most recent information
+    os.environ['RETRIEVER'] = os.getenv('RETRIEVER', 'tavily')
+    os.environ['TAVILY_API_KEY'] = os.getenv('TAVILY_API_KEY', '')
     try:
         if report_type == 'detailed_report':
             detailed_report = DetailedReport(
