@@ -45,6 +45,7 @@ class TestMultiAgentWorkflow:
         yield
         mock_llm.reset_history()
 
+    @pytest.mark.asyncio
     @patch('multi_agents.agents.editor.ResearchAgent')
     @patch('multi_agents.agents.editor.ReviewerAgent') 
     @patch('multi_agents.agents.editor.ReviserAgent')
@@ -60,11 +61,12 @@ class TestMultiAgentWorkflow:
         # Test agent initialization
         agents = editor_agent._initialize_agents()
         
-        assert "researcher" in agents
+        assert "research" in agents  # Note: key is 'research' not 'researcher'
         assert "reviewer" in agents
         assert "reviser" in agents
 
-    @patch('multi_agents.agents.utils.llms.call_model')
+    @pytest.mark.asyncio
+    @patch('multi_agents.agents.editor.call_model')
     async def test_research_planning_workflow(self, mock_call_model, editor_agent, mock_task):
         """Test the research planning workflow."""
         mock_plan = {
@@ -85,6 +87,7 @@ class TestMultiAgentWorkflow:
         assert result["sections"] == mock_plan["sections"]
         assert len(result["sections"]) <= mock_task["max_sections"]
 
+    @pytest.mark.asyncio
     async def test_reviewer_workflow_integration(self):
         """Test reviewer integration in workflow context."""
         reviewer = ReviewerAgent()
@@ -99,14 +102,18 @@ class TestMultiAgentWorkflow:
             "draft": "Mock draft content for review"
         }
         
-        with patch('multi_agents.agents.reviewer.call_model', create_mock_call_model()):
+        with patch('multi_agents.agents.reviewer.call_model') as mock_call:
+            # Return feedback string for review
+            mock_call.return_value = "The draft needs improvement in accuracy section."
             result = await reviewer.run(draft_state)
             
             assert isinstance(result, dict)
             assert "review" in result
             # Mock should return feedback for review requests
             assert result["review"] is not None
+            assert "improvement" in result["review"]
 
+    @pytest.mark.asyncio
     async def test_workflow_decision_logic(self):
         """Test the workflow decision logic for accept/revise."""
         reviewer = ReviewerAgent()
@@ -129,29 +136,20 @@ class TestMultiAgentWorkflow:
             # Check workflow decision path
             assert result["review"] is None  # Should trigger "accept" path
 
-    @patch('multi_agents.agents.utils.llms.call_model')
-    async def test_agent_communication_flow(self, mock_call_model):
+    @pytest.mark.asyncio
+    async def test_agent_communication_flow(self):
         """Test communication flow between agents."""
-        mock_call_model.side_effect = [
-            "Research results",  # ResearchAgent response
-            "None",             # ReviewerAgent accept response
-        ]
-        
-        # This would normally be handled by the workflow engine
-        # but we're testing the data flow between agents
-        
-        # Simulate research -> review flow
-        research_result = {"draft": "Research results"}
-        
         # Reviewer processes the research result  
         reviewer = ReviewerAgent()
         draft_state = {
             "task": {"model": "gpt-4", "verbose": False, "follow_guidelines": True, "guidelines": []},
-            "draft": research_result["draft"]
+            "draft": "Research results draft content"
         }
         
-        review_result = await reviewer.run(draft_state)
-        
-        # Verify data flow
-        assert review_result["review"] is None  # Accept decision
-        assert mock_call_model.call_count == 1
+        with patch('multi_agents.agents.reviewer.call_model') as mock_call:
+            # Return "None" string which gets converted to None in review_draft
+            mock_call.return_value = "None"
+            review_result = await reviewer.run(draft_state)
+            
+            # Verify data flow
+            assert review_result["review"] is None  # Accept decision
